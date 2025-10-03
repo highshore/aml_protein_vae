@@ -104,6 +104,41 @@ print("Test size:", test_df.shape)
 seq_df.shape[0] ## Why only 50?
 
 ##One hot encoding: String -> Vector
+##One hot encoding: String -> Vector
+
+# Define amino acid alphabet (incl. gap '-')
+aa_alphabet = "ACDEFGHIKLMNPQRSTVWY-X"
+aa_to_int = {aa: i for i, aa in enumerate(aa_alphabet)}
+vocab_size = len(aa_alphabet)
+print("Alphabet size:", vocab_size)
+
+
+def one_hot_encode_sequence(seq, max_len=333):
+    # Convert each character to an integer
+    int_encoded = [aa_to_int.get(aa, aa_to_int["X"]) for aa in seq]
+    
+    # One-hot encode
+    one_hot = np.zeros((max_len, vocab_size), dtype=np.int8)
+    for i, idx in enumerate(int_encoded):
+        one_hot[i, idx] = 1
+    return one_hot
+
+# One-hot encode all sequences in training set
+train_encoded = np.array([one_hot_encode_sequence(seq, max_len=333) 
+                          for seq in train_df["Padded_FASTA"]])
+
+print("Shape of training data:", train_encoded.shape)
+# (num_sequences, 333, vocab_size)
+
+
+train_encoded_flat = train_encoded.reshape(train_encoded.shape[0], -1)
+print("Flattened shape:", train_encoded_flat.shape)
+# (num_sequences, 333*22)
+
+
+
+
+
 
 # 2-d latent space, parameter count in same order of magnitude
 latent_dims = 2
