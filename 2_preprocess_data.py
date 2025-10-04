@@ -26,6 +26,20 @@ print("Minimum length:", min_len)
 print("Maximum length:", max_len)
 print("Average length:", avg_len)
 
+#Remove sequences outliers
+seq_df = seq_df[seq_df["Seq_Length"] <= 361].reset_index(drop=True)
+
+# Calculate statistics
+min_len = seq_df["Seq_Length"].min()
+max_len = seq_df["Seq_Length"].max()
+avg_len = seq_df["Seq_Length"].mean()
+
+print("Minimum length:", min_len)
+print("Maximum length:", max_len)
+print("Average length:", avg_len)
+
+
+
 ##Fix sequence length by adding padding to both sides Padding Alphabet: "-"
 '''
 asdfasdfasdf-----
