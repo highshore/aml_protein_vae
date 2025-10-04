@@ -41,7 +41,7 @@ blast_record = NCBIXML.read(result_handle)
 print(len(blast_record))
 
 results = []
-for alignment in blast_record.alignments[:100]:  # top 5 hits
+for alignment in blast_record.alignments:  # top 5 hits
     acc = alignment.accession
 
     # Fetch full FASTA sequence from NCBI using accession
