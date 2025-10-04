@@ -80,7 +80,7 @@ vocab_size = len(aa_alphabet)
 print("Alphabet size:", vocab_size)
 
 
-def one_hot_encode_sequence(seq, max_len=333):
+def one_hot_encode_sequence(seq, max_len):
     # Convert each character to an integer
     int_encoded = [aa_to_int.get(aa, aa_to_int["X"]) for aa in seq]
 
@@ -91,7 +91,7 @@ def one_hot_encode_sequence(seq, max_len=333):
     return one_hot
 
 # One-hot encode all sequences in training set
-train_encoded = np.array([one_hot_encode_sequence(seq, max_len=333)
+train_encoded = np.array([one_hot_encode_sequence(seq, max_len=max_len)
                           for seq in train_df["Padded_FASTA"]])
 
 print("Shape of training data:", train_encoded.shape)
