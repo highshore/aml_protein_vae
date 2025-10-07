@@ -14,4 +14,5 @@ Reconstruct 된 8*(protein seq length)의 각 column vector를 가장 가까운 
    numerical array가 아닌 단백질 서열 string를 가지고 계산하면 최종적인 서열을 더 잘 reconstruct 할 수 있지 않을까?
 2. 위 질문에 이어서 8*(protein seq length)의 각 column vector 의 cosing similarity를 가지고 계산했는데 차라리 neural network를 사용하여 VAE 의 output 이 string 이도록 하는 것이 나은가? 
 3. padding 이 너무 많으니 padding 대신 cropping 하여 train을 해볼까?
+4. ADAM Optimizer  적용이 아직 안된 것 같다.
 
