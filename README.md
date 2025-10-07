@@ -17,4 +17,4 @@ Reconstruct 된 8*(protein seq length)의 각 column vector를 가장 가까운 
 2. 위 질문에 이어서 8*(protein seq length)의 각 column vector 의 cosing similarity를 가지고 계산했는데 차라리 neural network를 사용하여 VAE 의 output 이 string 이도록 하는 것이 나은가? 
 3. padding 이 너무 많으니 padding 대신 cropping 하여 train을 해볼까?
 4. ADAM Optimizer  적용이 아직 안된 것 같다.
-
+5. Reconstruct 할 때 protein 서열 중간에 padding 을 넣는 경우가 있는데 이를 방지해야한다. 
