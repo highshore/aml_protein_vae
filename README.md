@@ -5,8 +5,10 @@ Embedding의 결과로 8*(protein seq length) 의 array 가 얻어집니다.
 VAE 역시 8*(protein seq length 의 array) 를 reconstruct 합니다.  
 Reconstruct 된 8*(protein seq length)의 각 column vector를 가장 가까운 아미노산(cosing similarity)으로 바꾸어 주면 단백질 서열 string을 얻을 수 있습니다.   
 
-하지만 실행해보면 코드의 성능은 매우 나쁩니다. 
+하지만 실행해보면 코드의 성능은 매우 나쁩니다. (40 epoch 기준)
 60% 정도의 sequence 일치율를 보여주는데, 앞쪽의 padding을 고려하면 실제 일치율은 절반도 못 미칠 듯 합니다.   
+100 epoch training 하니 결과가 좀 나아져서, 나중에 아예 500,1000 epoch training 해보아도 좋을 것 같네요.
+
 앞으로 많은 부분을 고쳐야겠습니다.  
 
 생각해볼 문제: 
