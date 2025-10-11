@@ -1,0 +1,9 @@
+numpy
+torch
+torchvision
+biopython
+pandas
+requests
+scikit-learn
+matplotlib
+

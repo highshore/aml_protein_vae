@@ -21,3 +21,9 @@ Interpolate 할 만큼 서열이 다르지 않아요.
 3. padding 이 너무 많으니 padding 대신 cropping 하여 train을 해볼까?
 4. ADAM Optimizer  적용이 아직 안된 것 같다.
 5. Reconstruct 할 때 protein 서열 중간에 padding 을 넣는 경우가 있는데 이를 방지해야한다. 
+
+
+### 10월 12일 수정사항 by 김수겸 ###
+1. 각자 git clone할 때 편리하게 패키지 다운받을 수 있도록 requirements.txt 생성
+2. full code 코드가 돌아갈 때 상황 파악을 위해서 print statement를 곳곳에 추가
+3. 기존 코드는 Blast 검색을 할 때 결과 개수에 따라 오류가 날 수 있음 => 결과가 없을 때, 하나일 때, 여러 개일 때를 대비해 케이스 바이 케이스 핸들링 추가 (코드 후반부에 영향 없음, 앞부분만 작업)

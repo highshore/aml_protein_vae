@@ -15,10 +15,6 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
-##Protein sequence retreival
-!pip install biopython pandas requests
-
 from Bio import ExPASy, SwissProt, SeqIO, Entrez
 from Bio.Blast import NCBIWWW, NCBIXML
 import pandas as pd
@@ -27,38 +23,102 @@ import requests
 #Protein of interest: Aqua porin  https://www.uniprot.org/uniprotkb/A0A251P855/entry
 uniprot_id = "A0A251P855"
 
+print(f"[1/10] Fetching protein sequence for {uniprot_id} from UniProt...")
 # Fetch FASTA directly from UniProt
 url = f"https://www.uniprot.org/uniprot/{uniprot_id}.fasta"
 response = requests.get(url)
 fasta_seq = response.text
+print(f"✓ Successfully retrieved FASTA sequence ({len(fasta_seq)} characters)")
 
+print("\n[2/10] Running BLASTP against NCBI nr database (this may take several minutes)...")
 # Run BLASTP against NCBI nr database
 result_handle = NCBIWWW.qblast("blastp", "nr",  fasta_seq, hitlist_size=500)
 
 Entrez.email = "sean011016@gmail.com"  # required by NCBI
 
-blast_record = NCBIXML.read(result_handle)
-print(len(blast_record))
+print("✓ BLAST search completed, parsing results...")
+
+# Handle both single record and multiple records cases
+try:
+    # First, try to read as a single record (most common case)
+    blast_record = NCBIXML.read(result_handle)
+    blast_records = [blast_record]
+    print(f"✓ Parsed single BLAST record with {len(blast_record.alignments)} alignments")
+except (ValueError, AttributeError) as e:
+    # If that fails, it might be multiple records
+    print(f"  Single record parsing failed ({type(e).__name__}), trying multiple records...")
+    # Save to temp file since we can't seek on web response
+    import tempfile
+    with tempfile.NamedTemporaryFile(mode='w+', delete=False, suffix='.xml') as tmp:
+        tmp.write(result_handle.read())
+        tmp_path = tmp.name
+    
+    # Now parse from the file
+    with open(tmp_path, 'r') as f:
+        blast_records = list(NCBIXML.parse(f))
+    
+    # Clean up temp file
+    os.unlink(tmp_path)
+    
+    total_alignments = sum(len(rec.alignments) for rec in blast_records)
+    print(f"✓ Parsed {len(blast_records)} BLAST records with {total_alignments} total alignments")
+
+print(f"\n[3/10] Fetching full sequences for top 100 BLAST hits...")
+
+# Safety check: ensure we have records and alignments
+if not blast_records:
+    raise RuntimeError("No BLAST records found! The search may have failed.")
+
+total_available = sum(len(rec.alignments) for rec in blast_records)
+if total_available == 0:
+    raise RuntimeError("No alignments found in BLAST results!")
+
+num_to_fetch = min(100, total_available)
+print(f"  Will fetch {num_to_fetch} sequences from {total_available} available alignments")
 
 results = []
-for alignment in blast_record.alignments[:100]:  # top 5 hits
-    acc = alignment.accession
+alignment_count = 0
 
-    # Fetch full FASTA sequence from NCBI using accession
-    handle = Entrez.efetch(db="protein", id=acc, rettype="fasta", retmode="text")
-    record = SeqIO.read(handle, "fasta")
-    handle.close()
+for record_idx, blast_record in enumerate(blast_records):
+    for alignment in blast_record.alignments:
+        if alignment_count >= 100:
+            break
+        
+        alignment_count += 1
+        acc = alignment.accession
+        
+        if alignment_count % 10 == 0:
+            print(f"  Progress: {alignment_count}/100 sequences retrieved...")
 
-    results.append([acc, str(record.seq)])
+        try:
+            # Fetch full FASTA sequence from NCBI using accession
+            handle = Entrez.efetch(db="protein", id=acc, rettype="fasta", retmode="text")
+            record = SeqIO.read(handle, "fasta")
+            handle.close()
+            results.append([acc, str(record.seq)])
+        except Exception as e:
+            print(f"  Warning: Failed to fetch sequence for {acc}: {e}")
+            continue
+    
+    if alignment_count >= 100:
+        break
+
+print(f"✓ Successfully retrieved {len(results)} protein sequences")
+
+# Check if we have enough sequences to continue
+if len(results) < 5:
+    raise RuntimeError(f"Only retrieved {len(results)} sequences, need at least 5 for meaningful analysis!")
 
 # Make DataFrame and save as CSV
 seq_df = pd.DataFrame(results, columns=["Accession_ID", "Full_FASTA"])
 
+print("\nFirst few sequences:")
 print(seq_df.head())
 
 ##Calculate average protein sequence length
 #Retrieve sequences from CSV
 
+print("\n[4/10] Calculating sequence length statistics...")
 seq_df["Seq_Length"] = seq_df["Full_FASTA"].apply(len)
 
 # Calculate statistics
@@ -66,9 +126,9 @@ min_len = seq_df["Seq_Length"].min()
 max_len = seq_df["Seq_Length"].max()
 avg_len = seq_df["Seq_Length"].mean()
 
-print("Minimum length:", min_len)
-print("Maximum length:", max_len)
-print("Average length:", avg_len)
+print(f"  Minimum length: {min_len}")
+print(f"  Maximum length: {max_len}")
+print(f"  Average length: {avg_len:.2f}")
 
 ##Fix sequence length by adding padding to both sides Padding Alphabet: "-"
 '''
@@ -81,36 +141,41 @@ sdfasdfasdfadsf--
 # Suppose df["Full_FASTA"] contains your sequences
 max_len = seq_df["Seq_Length"].max()
 
+print(f"\n[5/10] Padding sequences to maximum length ({max_len})...")
 # Pad sequences with "-" on the right (to equal length)
 #seq_df["Padded_FASTA"] = seq_df["Full_FASTA"].apply(lambda x: x.ljust(max_len, "-")) #To the right
 seq_df["Padded_FASTA"] = seq_df["Full_FASTA"].apply(lambda x: x.rjust(max_len, "-")) #To the right
 # Check lengths (all should be 333)
-print(seq_df["Padded_FASTA"].apply(len).unique())
+unique_lengths = seq_df["Padded_FASTA"].apply(len).unique()
+print(f"✓ All sequences padded to length: {unique_lengths}")
+print("\nFirst 10 padded sequences:")
 print(seq_df.head(10))
 seq_df.to_csv("blast_hits.csv", index=False)
+print("✓ Saved sequences to blast_hits.csv")
 
 ##Or just MSA
 
 ##Train Test Split 8:2
 from sklearn.model_selection import train_test_split
 
+print(f"\n[6/10] Splitting data into train/test sets (80/20 split)...")
 # Assume df is your DataFrame
 # For example, split 80% train, 20% test
 train_df, test_df = train_test_split(seq_df, test_size=0.2, random_state=42)
 
-print("Train size:", train_df.shape)
-print("Test size:", test_df.shape)
-
-seq_df.shape[0] ## Why only 50?
+print(f"✓ Train size: {train_df.shape}")
+print(f"✓ Test size: {test_df.shape}")
+print(f"  Total sequences: {seq_df.shape[0]}")
 
 ##One hot encoding: String -> Vector
 ##One hot encoding: String -> Vector
 
+print(f"\n[7/10] One-hot encoding protein sequences...")
 # Define amino acid alphabet (incl. gap '-')
 aa_alphabet = "ACDEFGHIKLMNPQRSTVWY-X"
 aa_to_int = {aa: i for i, aa in enumerate(aa_alphabet)}
 vocab_size = len(aa_alphabet)
-print("Alphabet size:", vocab_size)
+print(f"  Amino acid alphabet size: {vocab_size}")
 
 
 def one_hot_encode_sequence(seq, max_len=333):
@@ -127,12 +192,12 @@ def one_hot_encode_sequence(seq, max_len=333):
 train_encoded = np.array([one_hot_encode_sequence(seq, max_len=333) 
                           for seq in train_df["Padded_FASTA"]])
 
-print("Shape of training data:", train_encoded.shape)
+print(f"✓ Training data shape: {train_encoded.shape}")
 # (num_sequences, 333, vocab_size)
 
 
 train_encoded_flat = train_encoded.reshape(train_encoded.shape[0], -1)
-print("Flattened shape:", train_encoded_flat.shape)
+print(f"✓ Flattened shape: {train_encoded_flat.shape}")
 # (num_sequences, 333*22)
 
 
@@ -149,6 +214,13 @@ learning_rate = 1e-3
 variational_beta = 1
 use_gpu = True
 
+print(f"\n[8/10] Setting up VAE model and loading MNIST data...")
+print(f"  Model parameters:")
+print(f"    - Latent dimensions: {latent_dims}")
+print(f"    - Epochs: {num_epochs}")
+print(f"    - Batch size: {batch_size}")
+print(f"    - Learning rate: {learning_rate}")
+
 import torchvision.transforms as transforms
 from torch.utils.data import DataLoader
 from torchvision.datasets import MNIST
@@ -162,6 +234,7 @@ train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True
 
 test_dataset = MNIST(root='./data/MNIST', download=True, train=False, transform=img_transform)
 test_dataloader = DataLoader(test_dataset, batch_size=batch_size, shuffle=True)
+print(f"✓ MNIST data loaded: {len(train_dataset)} training, {len(test_dataset)} test images")
 
 ##Revisions
 #1D convolution filter
@@ -258,7 +331,8 @@ device = torch.device("cuda:0" if use_gpu and torch.cuda.is_available() else "cp
 vae = vae.to(device)
 
 num_params = sum(p.numel() for p in vae.parameters() if p.requires_grad)
-print('Number of parameters: %d' % num_params)
+print(f'✓ VAE model created with {num_params:,} trainable parameters')
+print(f'  Using device: {device}')
 
 optimizer = torch.optim.Adam(params=vae.parameters(), lr=learning_rate, weight_decay=1e-5)
 
@@ -267,7 +341,7 @@ vae.train()
 
 train_loss_avg = []
 
-print('Training ...')
+print(f'\n[9/10] Training VAE model for {num_epochs} epochs...')
 for epoch in range(num_epochs):
     train_loss_avg.append(0)
     num_batches = 0
@@ -293,17 +367,21 @@ for epoch in range(num_epochs):
         num_batches += 1
 
     train_loss_avg[-1] /= num_batches
-    print('Epoch [%d / %d] average reconstruction error: %f' % (epoch+1, num_epochs, train_loss_avg[-1]))
+    print('  Epoch [%d / %d] average reconstruction error: %.2f' % (epoch+1, num_epochs, train_loss_avg[-1]))
+
+print('✓ Training completed!')
 
 import matplotlib.pyplot as plt
 plt.ion()
 
+print('\n  Plotting training loss curve...')
 fig = plt.figure()
 plt.plot(train_loss_avg)
 plt.xlabel('Epochs')
 plt.ylabel('Loss')
 plt.show()
 
+print(f'\n[10/10] Evaluating model on test set...')
 # set to evaluation mode
 vae.eval()
 
@@ -324,7 +402,7 @@ for image_batch, _ in test_dataloader:
         num_batches += 1
 
 test_loss_avg /= num_batches
-print('average reconstruction error: %f' % (test_loss_avg))
+print(f'✓ Test set average reconstruction error: {test_loss_avg:.2f}')
 
 """**Pracice 2 (Spherical Linear Interpolation).**  In the previous interpolation function, the latent vectors were combined by simple linear interpolation:
 \begin{equation} z_{\lambda}^{\mathrm{lin}} = (1-\lambda) z_1 + \lambda z_2,\qquad 0 \leq \lambda \leq 1.
@@ -374,6 +452,8 @@ def visualise_output(images, model):
         plt.imshow(np.transpose(np_imagegrid, (1, 2, 0)))
         plt.show()
 
+print('\n  Generating visualizations and interpolations...')
+
 vae.eval()
 
 
@@ -409,6 +489,7 @@ def interpolation(lambda1, model, img1, img2):
 
         return inter_image
 
+print('  Creating interpolation between digits 7 and 1...')
 # sort part of test set by digit
 digits = [[] for _ in range(10)]
 for img_batch, label_batch in test_dataloader:
@@ -434,9 +515,11 @@ for ind,l in enumerate(lambda_range):
     axs[ind].imshow(image[0,0,:,:], cmap='gray')
     axs[ind].set_title('lambda_val='+str(round(l,1)))
 plt.show()
+print('  ✓ Interpolation visualization created')
 
 vae.eval()
 
+print('  Generating random samples from latent space...')
 with torch.no_grad():
 
     # sample latent vectors from the normal distribution
@@ -449,10 +532,13 @@ with torch.no_grad():
     fig, ax = plt.subplots(figsize=(5, 5))
     show_image(torchvision.utils.make_grid(img_recon.data[:100],10,5))
     plt.show()
+print('  ✓ Random samples visualization created')
 
 # load a network that was trained with a 2d latent space
 if latent_dims != 2:
     print('Please change the parameters to two latent dimensions.')
+else:
+    print('  Creating 2D latent space grid visualization...')
 
 with torch.no_grad():
 
@@ -474,3 +560,7 @@ with torch.no_grad():
     fig, ax = plt.subplots(figsize=(10, 10))
     show_image(torchvision.utils.make_grid(image_recon.data[:400],20,5))
     plt.show()
+
+print('\n' + '='*60)
+print('  ALL TASKS COMPLETED SUCCESSFULLY!')
+print('='*60)
