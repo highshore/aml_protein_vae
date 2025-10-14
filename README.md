@@ -27,3 +27,20 @@ Interpolate 할 만큼 서열이 다르지 않아요.
 1. 각자 git clone할 때 편리하게 패키지 다운받을 수 있도록 requirements.txt 생성
 2. full code 코드가 돌아갈 때 상황 파악을 위해서 print statement를 곳곳에 추가
 3. 기존 코드는 Blast 검색을 할 때 결과 개수에 따라 오류가 날 수 있음 => 결과가 없을 때, 하나일 때, 여러 개일 때를 대비해 케이스 바이 케이스 핸들링 추가 (코드 후반부에 영향 없음, 앞부분만 작업)
+4. **다중 단백질 분석 지원**: 이제 여러 UniProt ID를 한 번에 처리 가능
+
+### 다중 단백질 사용 방법 ###
+`full_code.py`의 23-29줄에서 `uniprot_ids` 리스트를 수정하세요:
+
+```python
+uniprot_ids = [
+    "A0A251P855",  # Aquaporin
+    "P68871",      # Hemoglobin subunit beta
+    "P01308",      # Insulin
+]
+```
+
+- 단백질을 추가하려면: 리스트에 새로운 UniProt ID를 추가
+- 단일 단백질만 사용하려면: 하나의 ID만 남기면 됨
+- 모든 단백질의 BLAST 결과가 합쳐져서 100개의 고유한 서열을 수집함
+- 중복 제거 자동 처리 (같은 accession ID는 한 번만 수집)

@@ -20,75 +20,116 @@ from Bio.Blast import NCBIWWW, NCBIXML
 import pandas as pd
 import requests
 
-#Protein of interest: Aqua porin  https://www.uniprot.org/uniprotkb/A0A251P855/entry
-uniprot_id = "A0A251P855"
+#Proteins of interest - you can add multiple UniProt IDs here
+# Aqua porin: https://www.uniprot.org/uniprotkb/A0A251P855/entry
+uniprot_ids = [
+    "A0A251P855",  # Aquaporin
+    "P68871",    # Hemoglobin subunit beta
+    "P01308",    # Insulin
+]
 
-print(f"[1/10] Fetching protein sequence for {uniprot_id} from UniProt...")
-# Fetch FASTA directly from UniProt
-url = f"https://www.uniprot.org/uniprot/{uniprot_id}.fasta"
-response = requests.get(url)
-fasta_seq = response.text
-print(f"✓ Successfully retrieved FASTA sequence ({len(fasta_seq)} characters)")
-
-print("\n[2/10] Running BLASTP against NCBI nr database (this may take several minutes)...")
-# Run BLASTP against NCBI nr database
-result_handle = NCBIWWW.qblast("blastp", "nr",  fasta_seq, hitlist_size=500)
+print(f"[1/10] Processing {len(uniprot_ids)} protein(s)...")
+print(f"  UniProt IDs: {', '.join(uniprot_ids)}")
 
 Entrez.email = "sean011016@gmail.com"  # required by NCBI
 
-print("✓ BLAST search completed, parsing results...")
+# Collect all BLAST records from all proteins
+all_blast_records = []
 
-# Handle both single record and multiple records cases
-try:
-    # First, try to read as a single record (most common case)
-    blast_record = NCBIXML.read(result_handle)
-    blast_records = [blast_record]
-    print(f"✓ Parsed single BLAST record with {len(blast_record.alignments)} alignments")
-except (ValueError, AttributeError) as e:
-    # If that fails, it might be multiple records
-    print(f"  Single record parsing failed ({type(e).__name__}), trying multiple records...")
-    # Save to temp file since we can't seek on web response
-    import tempfile
-    with tempfile.NamedTemporaryFile(mode='w+', delete=False, suffix='.xml') as tmp:
-        tmp.write(result_handle.read())
-        tmp_path = tmp.name
+for protein_idx, uniprot_id in enumerate(uniprot_ids, 1):
+    print(f"\n  [{protein_idx}/{len(uniprot_ids)}] Processing protein {uniprot_id}...")
     
-    # Now parse from the file
-    with open(tmp_path, 'r') as f:
-        blast_records = list(NCBIXML.parse(f))
-    
-    # Clean up temp file
-    os.unlink(tmp_path)
-    
-    total_alignments = sum(len(rec.alignments) for rec in blast_records)
-    print(f"✓ Parsed {len(blast_records)} BLAST records with {total_alignments} total alignments")
+    # Fetch FASTA directly from UniProt
+    url = f"https://www.uniprot.org/uniprot/{uniprot_id}.fasta"
+    try:
+        response = requests.get(url)
+        response.raise_for_status()
+        fasta_seq = response.text
+        
+        if not fasta_seq or "Error" in fasta_seq:
+            print(f"    ⚠ Warning: Failed to retrieve valid FASTA for {uniprot_id}, skipping...")
+            continue
+            
+        print(f"    ✓ Retrieved FASTA sequence ({len(fasta_seq)} characters)")
+    except Exception as e:
+        print(f"    ⚠ Warning: Error fetching {uniprot_id}: {e}, skipping...")
+        continue
 
-print(f"\n[3/10] Fetching full sequences for top 100 BLAST hits...")
+    print(f"    Running BLASTP (this may take several minutes)...")
+    # Run BLASTP against NCBI nr database
+    try:
+        result_handle = NCBIWWW.qblast("blastp", "nr", fasta_seq, hitlist_size=500)
+        print(f"    ✓ BLAST search completed, parsing results...")
+    except Exception as e:
+        print(f"    ⚠ Warning: BLAST search failed for {uniprot_id}: {e}, skipping...")
+        continue
+
+    # Handle both single record and multiple records cases
+    try:
+        # First, try to read as a single record (most common case)
+        blast_record = NCBIXML.read(result_handle)
+        blast_records = [blast_record]
+        print(f"    ✓ Parsed single BLAST record with {len(blast_record.alignments)} alignments")
+    except (ValueError, AttributeError) as e:
+        # If that fails, it might be multiple records
+        print(f"    Single record parsing failed ({type(e).__name__}), trying multiple records...")
+        # Save to temp file since we can't seek on web response
+        import tempfile
+        with tempfile.NamedTemporaryFile(mode='w+', delete=False, suffix='.xml') as tmp:
+            tmp.write(result_handle.read())
+            tmp_path = tmp.name
+        
+        # Now parse from the file
+        with open(tmp_path, 'r') as f:
+            blast_records = list(NCBIXML.parse(f))
+        
+        # Clean up temp file
+        os.unlink(tmp_path)
+        
+        total_alignments = sum(len(rec.alignments) for rec in blast_records)
+        print(f"    ✓ Parsed {len(blast_records)} BLAST records with {total_alignments} total alignments")
+    
+    # Add to our collection
+    all_blast_records.extend(blast_records)
+
+print(f"\n[2/10] Collected BLAST results from {len(uniprot_ids)} protein(s)")
+print(f"  Total BLAST records: {len(all_blast_records)}")
 
 # Safety check: ensure we have records and alignments
-if not blast_records:
-    raise RuntimeError("No BLAST records found! The search may have failed.")
+if not all_blast_records:
+    raise RuntimeError("No BLAST records found! All searches may have failed.")
 
-total_available = sum(len(rec.alignments) for rec in blast_records)
+total_available = sum(len(rec.alignments) for rec in all_blast_records)
 if total_available == 0:
     raise RuntimeError("No alignments found in BLAST results!")
 
+print(f"  Total alignments available: {total_available}")
+
+print(f"\n[3/10] Fetching full sequences for top 100 unique BLAST hits...")
+
 num_to_fetch = min(100, total_available)
-print(f"  Will fetch {num_to_fetch} sequences from {total_available} available alignments")
+print(f"  Will fetch up to {num_to_fetch} sequences from {total_available} available alignments")
 
 results = []
+seen_accessions = set()  # Track unique accessions to avoid duplicates
 alignment_count = 0
 
-for record_idx, blast_record in enumerate(blast_records):
+for record_idx, blast_record in enumerate(all_blast_records):
     for alignment in blast_record.alignments:
-        if alignment_count >= 100:
+        if len(results) >= 100:
             break
         
-        alignment_count += 1
         acc = alignment.accession
         
+        # Skip if we've already seen this accession
+        if acc in seen_accessions:
+            continue
+        
+        seen_accessions.add(acc)
+        alignment_count += 1
+        
         if alignment_count % 10 == 0:
-            print(f"  Progress: {alignment_count}/100 sequences retrieved...")
+            print(f"  Progress: {len(results)}/100 unique sequences retrieved...")
 
         try:
             # Fetch full FASTA sequence from NCBI using accession
@@ -100,10 +141,10 @@ for record_idx, blast_record in enumerate(blast_records):
             print(f"  Warning: Failed to fetch sequence for {acc}: {e}")
             continue
     
-    if alignment_count >= 100:
+    if len(results) >= 100:
         break
 
-print(f"✓ Successfully retrieved {len(results)} protein sequences")
+print(f"✓ Successfully retrieved {len(results)} unique protein sequences")
 
 # Check if we have enough sequences to continue
 if len(results) < 5:
@@ -151,7 +192,7 @@ print(f"✓ All sequences padded to length: {unique_lengths}")
 print("\nFirst 10 padded sequences:")
 print(seq_df.head(10))
 seq_df.to_csv("blast_hits.csv", index=False)
-print("✓ Saved sequences to blast_hits.csv")
+print(f"✓ Saved sequences to blast_hits.csv (source: {len(uniprot_ids)} protein(s))")
 
 ##Or just MSA
 
